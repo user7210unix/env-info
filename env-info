@@ -3,15 +3,15 @@
 # Reset color
 reset=$(tput sgr0)
 
-# Colors for the dots (you can adjust these to match your theme)
+# Colors for the dots
 dot1=$(tput setaf 0)  # Black
 dot2=$(tput setaf 8)  # Gray
 dot3=$(tput setaf 7)  # White
 dot4=$(tput setaf 15) # Bright white
 
-# Function to get system information dynamically
+# Functions with fallbacks and simplified outputs
 get_username() {
-    whoami
+    whoami 2>/dev/null || echo "Unknown"
 }
 
 get_distro() {
@@ -24,21 +24,21 @@ get_distro() {
 }
 
 get_arch() {
-    uname -m
+    uname -m 2>/dev/null || echo "Unknown"
 }
 
 get_kernel() {
-    uname -r
+    uname -r 2>/dev/null || echo "Unknown"
 }
 
 get_uptime() {
-    uptime -p | sed 's/up //'
+    uptime -p 2>/dev/null | sed 's/up //' || echo "Unknown"
 }
 
 get_init() {
     if [ -d /run/systemd/system ]; then
         echo "systemd"
-    elif [ -f /sbin/init ] && strings /sbin/init | grep -q sysvinit; then
+    elif [ -f /sbin/init ] && strings /sbin/init | grep -q sysvinit 2>/dev/null; then
         echo "sysvinit"
     elif command -v runit >/dev/null 2>&1; then
         echo "runit"
@@ -48,84 +48,156 @@ get_init() {
 }
 
 get_cpu() {
-    lscpu | grep "Model name" | awk -F: '{print $2}' | sed 's/^[ \t]*//' | sed 's/ \+/ /g'
+    local cpu=$(lscpu 2>/dev/null | grep "Model name" | awk -F: '{print $2}' | sed 's/^[ \t]*//' | sed 's/ \+/ /g')
+    if [ -n "$cpu" ] && [ "$cpu" != "Unknown" ]; then
+        model=$(echo "$cpu" | sed 's/.*\(i[3-7]-[0-9]\+[A-Za-z]*\).*/\1/' | sed 's/.*\(Ryzen [0-9] [0-9]\+\).*/\1/')
+        freq=$(echo "$cpu" | grep -o "[0-9]\+\.[0-9]\+GHz" || echo "")
+        if [ -n "$model" ] && [ -n "$freq" ]; then
+            echo "$model $freq"
+        else
+            echo "$model"
+        fi
+    else
+        echo "Unknown"
+    fi
 }
 
 get_gpu() {
-    lspci | grep -i vga | grep -i nvidia | awk -F: '{print $3}' | sed 's/^[ \t]*//' || echo ""
+    local gpu=$(lspci 2>/dev/null | grep -i vga | grep -i nvidia | awk -F: '{print $3}' | sed 's/^[ \t]*//')
+    if [ -n "$gpu" ]; then
+        echo "$gpu" | sed 's/.*\[GeForce [^]]*\].*/\0/' | sed 's/.*\[GeForce \(.*\)\].*/GeForce \1/'
+    else
+        echo "N/A"
+    fi
 }
 
 get_vram() {
     if command -v nvidia-smi >/dev/null 2>&1; then
         nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | awk '{print $1 " MiB"}'
     else
-        echo ""
+        echo "N/A"
     fi
 }
 
 get_ram() {
-    free -m | awk '/Mem:/ {print $3 " / " $2 " MiB"}'
+    free -m 2>/dev/null | awk '/Mem:/ {print $3 "/" $2 " MiB"}' || echo "Unknown"
 }
 
 get_disk() {
-    df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}'
+    df -h / 2>/dev/null | awk 'NR==2 {print $3 "/" $2 " (" $5 ")"}' || echo "Unknown"
 }
 
 get_monitor() {
     if command -v xrandr >/dev/null 2>&1; then
-        xrandr | grep " connected" | grep -o "[0-9]\+x[0-9]\+@[0-9.]\+Hz" | head -1 || echo ""
+        xrandr | grep " connected" | grep -o "[0-9]\+x[0-9]\+@[0-9.]\+Hz" | head -1 || echo "N/A"
     else
-        echo ""
+        echo "N/A"
     fi
 }
 
 get_editor() {
     if command -v nvim >/dev/null 2>&1; then
-        echo "/bin/nvim"
+        echo "nvim"
     elif [ -n "$EDITOR" ]; then
-        echo "$EDITOR"
+        basename "$EDITOR"
     else
-        echo ""
+        echo "N/A"
     fi
 }
 
 get_shell() {
-    basename "$SHELL"
+    basename "$SHELL" 2>/dev/null || echo "Unknown"
 }
 
 get_packages() {
-    # Check if the system is Linux From Scratch
     if [ -f /etc/os-release ] && grep -q "Linux From Scratch" /etc/os-release; then
-        # Count directories in ~/sources
         if [ -d "$HOME/sources" ]; then
-            find "$HOME/sources" -maxdepth 1 -type d | wc -l | awk '{print $1-1 " (sources)"}'
+            base_count=$(find "$HOME/sources" -maxdepth 1 -type f -name "*.tar.*" ! -name "*blfs*" | wc -l)
+            blfs_count=$(find "$HOME/sources" -maxdepth 1 -type f -name "*blfs*.tar.*" | wc -l)
+            echo "Sources ${base_count} base, ${blfs_count} blfs"
         else
-            echo "0 (sources)"
+            echo "Sources 0 base, 0 blfs"
         fi
     elif command -v pacman >/dev/null 2>&1; then
-        pacman -Q | wc -l | awk '{print $1 " (pacman)"}'
+        pacman -Q 2>/dev/null | wc -l | awk '{print $1 " (pacman)"}'
     elif command -v dpkg >/dev/null 2>&1; then
-        dpkg -l | grep ^ii | wc -l | awk '{print $1 " (dpkg)"}'
+        dpkg -l 2>/dev/null | grep ^ii | wc -l | awk '{print $1 " (dpkg)"}'
     else
-        echo ""
+        echo "N/A"
+    fi
+}
+
+get_library() {
+    if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -q musl; then
+        echo "Musl"
+    else
+        echo "Glibc"
+    fi
+}
+
+get_hardened() {
+    if [ -f /proc/config.gz ] && zcat /proc/config.gz | grep -q CONFIG_CC_STACKPROTECT 2>/dev/null; then
+        echo "Yes"
+    else
+        echo "No"
     fi
 }
 
 get_wm() {
-    if [ -n "$XDG_CURRENT_DESKTOP" ]; then
-        echo "$XDG_CURRENT_DESKTOP (X11)"
-    elif [ -n "$DESKTOP_SESSION" ]; then
-        echo "$DESKTOP_SESSION (X11)"
+    # Check for specific window managers
+    if pgrep -f "openbox" >/dev/null 2>&1; then
+        echo "Openbox"
+    elif pgrep -f "fluxbox" >/dev/null 2>&1; then
+        echo "Fluxbox"
+    elif pgrep -f "i3" >/dev/null 2>&1; then
+        echo "i3"
+    elif pgrep -f "bspwm" >/dev/null 2>&1; then
+        echo "bspwm"
+    elif [ -n "$XDG_CURRENT_DESKTOP" ] && echo "$XDG_CURRENT_DESKTOP" | grep -qi "openbox\|fluxbox\|i3\|bspwm"; then
+        echo "$XDG_CURRENT_DESKTOP"
+    elif [ -n "$DESKTOP_SESSION" ] && echo "$DESKTOP_SESSION" | grep -qi "openbox\|fluxbox\|i3\|bspwm"; then
+        echo "$DESKTOP_SESSION"
     else
-        echo ""
+        echo "N/A"
+    fi
+}
+
+get_de() {
+    # Check for desktop environments
+    if [ -n "$XDG_SESSION_DESKTOP" ]; then
+        case "$XDG_SESSION_DESKTOP" in
+	*openbox*) echo "Openbox" ;;
+            *plasma*) echo "KDE Plasma" ;;
+            *xfce*) echo "XFCE4" ;;
+            *mate*) echo "MATE" ;;
+            *) echo "$XDG_SESSION_DESKTOP" ;;
+        esac
+    elif [ -n "$DESKTOP_SESSION" ]; then
+        case "$DESKTOP_SESSION" in
+            *gnome*) echo "GNOME" ;;
+            *plasma*) echo "KDE Plasma" ;;
+            *xfce*) echo "XFCE4" ;;
+            *mate*) echo "MATE" ;;
+            *) echo "$DESKTOP_SESSION" ;;
+        esac
+    elif pgrep -f "gnome-session" >/dev/null 2>&1; then
+        echo "GNOME"
+    elif pgrep -f "plasma" >/dev/null 2>&1; then
+        echo "KDE Plasma"
+    elif pgrep -f "xfce4-session" >/dev/null 2>&1; then
+        echo "XFCE4"
+    elif pgrep -f "mate-session" >/dev/null 2>&1; then
+        echo "MATE"
+    else
+        echo "N/A"
     fi
 }
 
 get_song() {
     if command -v mpc >/dev/null 2>&1; then
-        mpc current 2>/dev/null || echo ""
+        mpc current 2>/dev/null || echo "N/A"
     else
-        echo ""
+        echo "N/A"
     fi
 }
 
@@ -145,32 +217,14 @@ monitor=$(get_monitor)
 editor=$(get_editor)
 shell=$(get_shell)
 packages=$(get_packages)
+library=$(get_library)
+hardened=$(get_hardened)
 wm=$(get_wm)
+de=$(get_de)
 song=$(get_song)
-
-# Path to the image (optional, leave empty if no image)
-#image_path="./logo.png"
 
 # Clear the screen
 clear
-
-# Check if image is provided and display it
-image_width=0
-if [ -n "$image_path" ] && [ -f "$image_path" ]; then
-    # Display the image on the left
-    # Adjust the size (20x20) and position (@0x0) as needed
-    kitty +kitten icat --align left --place 20x20@0x0 "$image_path"
-    # Set the image width (adjust based on your image)
-    image_width=25
-    # Move cursor down to avoid overlap
-    tput cud 20
-    # Move cursor back to the top-right of the image
-    tput cuu 20
-    tput cuf "$image_width"
-else
-    # No image, start from the left
-    image_width=0
-fi
 
 # Print the username
 echo -e "\n${username}\n"
@@ -178,31 +232,32 @@ echo -e "\n${username}\n"
 # Print the color dots
 echo -e "${dot1}● ${dot2}● ${dot3}● ${dot4}●${reset}\n"
 
-# Print system information with exact formatting, only if the info exists
-echo -e "--- System ---"
-[ -n "$distro" ] && echo -e "Distro: ${distro}"
-[ -n "$arch" ] && echo -e "Arch: ${arch}"
-[ -n "$kernel" ] && echo -e "Kernel: ${kernel}"
-[ -n "$uptime" ] && echo -e "Uptime: ${uptime}"
-[ -n "$init" ] && echo -e "Init: ${init}"
+# Print system information, hide N/A or Unknown
+echo -e "---- System ----"
+[ "$distro" != "Unknown" ] && echo -e "Distro  $distro"
+[ "$arch" != "Unknown" ] && echo -e "Arch    $arch"
+[ "$kernel" != "Unknown" ] && echo -e "Kernel  $kernel"
+[ "$uptime" != "Unknown" ] && echo -e "Uptime  $uptime"
+[ "$init" != "Custom" ] && echo -e "Init    $init"
+[ "$library" != "Unknown" ] && echo -e "Library $library"
+echo -e "Hardened $hardened"
 echo -e ""
 
-echo -e "--- Hardware ---"
-[ -n "$cpu" ] && echo -e "CPU: ${cpu}"
-[ -n "$gpu" ] && echo -e "GPU: ${gpu}"
-[ -n "$vram" ] && echo -e "VRAM: ${vram}"
-[ -n "$ram" ] && echo -e "RAM: ${ram}"
-[ -n "$disk" ] && echo -e "Disk: ${disk}"
-[ -n "$monitor" ] && echo -e "Monitor: ${monitor}"
+echo -e "---- Hardware ----"
+[ "$cpu" != "Unknown" ] && echo -e "CPU     $cpu"
+[ "$gpu" != "N/A" ] && echo -e "GPU     $gpu"
+[ "$vram" != "N/A" ] && echo -e "VRAM    $vram"
+[ "$ram" != "Unknown" ] && echo -e "RAM     $ram"
+[ "$disk" != "Unknown" ] && echo -e "Disk    $disk"
 echo -e ""
 
-echo -e "--- Software ---"
-[ -n "$editor" ] && echo -e "Editor: ${editor}"
-[ -n "$shell" ] && echo -e "Shell: ${shell}"
-[ -n "$packages" ] && echo -e "Packages: ${packages}"
-[ -n "$wm" ] && echo -e "WM: ${wm}"
-[ -n "$song" ] && echo -e "Song: ${song}"
+echo -e "---- Software ----"
+[ "$editor" != "N/A" ] && echo -e "Editor  $editor"
+[ "$shell" != "Unknown" ] && echo -e "Shell   $shell"
+[ "$packages" != "N/A" ] && echo -e "$packages"
+[ "$wm" != "N/A" ] && echo -e "WM      $wm"
+[ "$song" != "N/A" ] && echo -e "Song    $song"
 echo -e ""
 
-# Reset the cursor position
+# Reset cursor
 tput cud 1
