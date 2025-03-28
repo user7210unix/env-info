@@ -111,12 +111,18 @@ get_shell() {
 
 get_packages() {
     if [ -f /etc/os-release ] && grep -q "Linux From Scratch" /etc/os-release; then
-        if [ -d "$HOME/sources" ]; then
-            base_count=$(find "$HOME/sources" -maxdepth 1 -type f -name "*.tar.*" ! -name "*blfs*" | wc -l)
-            blfs_count=$(find "$HOME/sources" -maxdepth 1 -type f -name "*blfs*.tar.*" | wc -l)
-            echo "Sources ${base_count} base, ${blfs_count} blfs"
+        # Look for sources recursively in $HOME/sources or a custom LFS source directory
+        local source_dir="${LFS_SOURCES:-$HOME/sources}"
+        if [ -d "$source_dir" ]; then
+            # Count all tarballs recursively for base LFS
+            base_count=$(find "$source_dir" -type f -name "*.tar.*" -not -name "*blfs*" -not -path "*blfs*" | wc -l)
+            # Count BLFS tarballs (include "blfs" in name or path)
+            blfs_count=$(find "$source_dir" -type f -name "*.tar.*" \( -name "*blfs*" -o -path "*blfs*" \) | wc -l)
+            # Count executables in /usr/bin/
+            bin_count=$(find /usr/bin/ -type f -executable | wc -l)
+            echo "Sources ${base_count} base, ${blfs_count} blfs, ${bin_count} (/usr/bin/)"
         else
-            echo "Sources 0 base, 0 blfs"
+            echo "Sources 0 base, 0 blfs, 0 (/usr/bin/)"
         fi
     elif command -v pacman >/dev/null 2>&1; then
         pacman -Q 2>/dev/null | wc -l | awk '{print $1 " (pacman)"}'
@@ -144,7 +150,6 @@ get_hardened() {
 }
 
 get_wm() {
-    # Check for specific window managers
     if pgrep -f "openbox" >/dev/null 2>&1; then
         echo "Openbox"
     elif pgrep -f "fluxbox" >/dev/null 2>&1; then
@@ -163,10 +168,9 @@ get_wm() {
 }
 
 get_de() {
-    # Check for desktop environments
     if [ -n "$XDG_SESSION_DESKTOP" ]; then
         case "$XDG_SESSION_DESKTOP" in
-	*openbox*) echo "Openbox" ;;
+            *openbox*) echo "Openbox" ;;
             *plasma*) echo "KDE Plasma" ;;
             *xfce*) echo "XFCE4" ;;
             *mate*) echo "MATE" ;;
@@ -254,7 +258,7 @@ echo -e ""
 echo -e "---- Software ----"
 [ "$editor" != "N/A" ] && echo -e "Editor  $editor"
 [ "$shell" != "Unknown" ] && echo -e "Shell   $shell"
-[ "$packages" != "N/A" ] && echo -e "$packages"
+[ "$packages" != "N/A" ] && echo -e "Packages $packages"
 [ "$wm" != "N/A" ] && echo -e "WM      $wm"
 [ "$song" != "N/A" ] && echo -e "Song    $song"
 echo -e ""
