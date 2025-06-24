@@ -16,6 +16,7 @@
 <div align="center">
 
 # sfetch
+### needed python package psutil
 
 
 <h1>
@@ -23,6 +24,3 @@
 </div>
 </div> 
 
-<div align="center>
-
-### needed python package psutil
