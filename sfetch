@@ -14,8 +14,8 @@ BLUE = "\033[1;34m"
 PURPLE = "\033[1;35m"
 CYAN = "\033[1;36m"
 WHITE = "\033[1;37m"
-GREY = "\033[3;90m"  # Italic grey for info
-BOLD = "\033[1m"      # Bold for labels
+GREY = "\033[3;90m"  
+BOLD = "\033[1m"     
 RESET = "\033[0m"
 C1 = "\033[30m" 
 C3 = "\033[36m"       
@@ -40,16 +40,14 @@ def logo():
 """
 
 # Gradient title colors
-TITLE_COLORS = [RED, YELLOW, GREEN, CYAN, BLUE, PURPLE]
+TITLE_COLORS = [GREY]
 
 def fix_length(text):
-    """Calculate length of ANSI escape sequences for accurate centering."""
     pattern = re.compile(r"\x1B\[[0-?9;]*[mK]")
     matches = re.findall(pattern, text)
     return sum(len(match) for match in matches)
 
 def center_text(text):
-    """Center text based on terminal width, accounting for ANSI codes."""
     terminal_width = shutil.get_terminal_size().columns
     ansi_length = fix_length(text)
     text_clean = re.sub(r"\x1B\[[0-?9;]*[mK]", "", text)
@@ -57,7 +55,6 @@ def center_text(text):
     return " " * padding + text
 
 def print_gradient_title():
-    """Print 'System Fetch' with a gradient color effect."""
     title = "System Fetch"
     output = ""
     for i, char in enumerate(title):
@@ -65,14 +62,7 @@ def print_gradient_title():
         output += f"{color}{char}{RESET}"
     print(center_text(output))
 
-def get_user_host():
-    """Get username@hostname."""
-    user = os.environ.get("USER", "unknown")
-    hostname = socket.gethostname()
-    return f"{GREY}{user}{CYAN}@{GREY}{hostname}{RESET}"
-
 def get_distro():
-    """Get distribution name from /etc/os-release."""
     try:
         with open("/etc/os-release") as f:
             for line in f:
@@ -82,12 +72,16 @@ def get_distro():
         return f"{GREY}Linux{RESET}"
     return f"{GREY}Unknown{RESET}"
 
+def get_memory():
+    mem = psutil.virtual_memory()
+    used = mem.used / (1024 ** 3)
+    total = mem.total / (1024 ** 3)
+    return f"{GREY}{used:.2f} / {total:.2f} GiB{RESET}"
+
 def get_kernel():
-    """Get kernel version."""
     return f"{GREY}{os.uname().release}{RESET}"
 
 def get_uptime():
-    """Get system uptime."""
     boot_time = psutil.boot_time()
     current_time = time.time()
     uptime_seconds = current_time - boot_time
@@ -102,30 +96,8 @@ def get_uptime():
     uptime_str += f"{minutes} minutes"
     return f"{GREY}{uptime_str}{RESET}"
 
-def get_cpu():
-    """Get shortened CPU model and frequency, excluding 'with' and beyond."""
-    try:
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if line.startswith("model name"):
-                    model = line.split(":")[1].strip().split("@")[0].strip()
-                    break
-        model = model.split(" with")[0].strip()[:20]  # Split at "with", take first part, limit to 20 chars
-        freq = psutil.cpu_freq().current / 1000
-        cores = psutil.cpu_count()
-        return f"{GREY}{model} @ {freq:.2f} GHz ({cores} cores){RESET}"
-    except:
-        return f"{GREY}Unknown CPU{RESET}"
-
-def get_memory():
-    """Get memory usage."""
-    mem = psutil.virtual_memory()
-    used = mem.used / (1024 ** 3)
-    total = mem.total / (1024 ** 3)
-    return f"{GREY}{used:.2f} / {total:.2f} GiB{RESET}"
 
 def get_disk():
-    """Get disk usage for root partition."""
     disk = psutil.disk_usage("/")
     used = disk.used / (1024 ** 3)
     total = disk.total / (1024 ** 3)
@@ -133,11 +105,9 @@ def get_disk():
     return f"{GREY}{used:.1f} / {total:.1f} GiB ({percent}%){RESET}"
 
 def get_shell():
-    """Get current shell."""
     return f"{GREY}{os.path.basename(os.environ.get('SHELL', 'unknown'))}{RESET}"
 
 def get_wm():
-    """Get window manager or desktop environment."""
     wm = os.environ.get("XDG_CURRENT_DESKTOP", "")
     if not wm:
         try:
@@ -147,7 +117,6 @@ def get_wm():
     return f"{GREY}{wm or 'Unknown'}{RESET}"
 
 def get_init():
-    """Detect the init system (runit, custom, systemd, sysvinit)."""
     try:
         if os.path.exists("/run/runit"):
             return f"{GREY}runit{RESET}"
@@ -161,7 +130,6 @@ def get_init():
         return f"{GREY}Unknown{RESET}"
 
 def get_packages():
-    """Get package count, with support for LFS and Gentoo."""
     if os.path.exists("/usr/bin/pacman"):
         count = len(os.popen("pacman -Q").readlines())
         return f"{GREY}{count} (pacman){RESET}"
@@ -187,7 +155,6 @@ def get_packages():
     return f"{GREY}Unknown{RESET}"
 
 def get_colors():
-    """Display a color palette."""
     colors = ""
     for i in range(6):
         colors += f"\033[3{i+1};1m██{RESET} "
@@ -195,9 +162,7 @@ def get_colors():
 
 
 def display():
-    """Main display function."""
     os.system("clear")
-    # Print ASCII art using logo()
     for line in logo().split("\n"):
         print(center_text(line))
     print_gradient_title()
@@ -227,4 +192,4 @@ if __name__ == "__main__":
     try:
         display()
     except KeyboardInterrupt:
-        print("\033[0m")  # Reset terminal on Ctrl+C
+        print("\033[0m")  
